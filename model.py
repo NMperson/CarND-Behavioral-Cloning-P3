@@ -1,96 +1,222 @@
-import pickle
-import time
-import tensorflow as tf
+import csv
+import cv2
+import argparse
+
+import math
+import matplotlib.pyplot as plt
+import numpy as np
+
+import sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 
-from alexnet import AlexNet
+from keras.models import Sequential, Model
+from keras.layers import Cropping2D, Lambda, Convolution2D, MaxPooling2D
+from keras.layers import Activation, Dropout, Flatten, Dense, GaussianNoise
 
-import csv
+import h5py
 
-dataFolder = 'data'
-dataPath = dataFolder + '/driving_log.csv'
-with open(dataPath) as dataFile:
-    logreader = csv.reader(dataFile)
-    next(logreader) #get rid of header row..
-    for row in logreader:
-        print(type(row))
-        print(row)
+def getData( dataPath ):
+    samples = []
+    steering = []
+    with open(dataPath) as dataFile:
+        logreader = csv.reader(dataFile)
+        headers = next(logreader) #get rid of header row..
+        for row in logreader:
+            #centerImage = row[0].strip()
+            #leftImage = row[1].strip()
+            #rightImage = row[2].strip()
+            #steering.append( float(row[3]) )
+            #if cv2.imread(dataFolder + centerImage).any():
+            samples.append(row)
+    print(len(samples))
+    return samples
+
+def column(matrix, i):
+    return [row[i] for row in matrix]
+
+def parseSample( batch_sample, image_number, image_offset ):
+    image_name = batch_sample[image_number].strip()
+    image = cv2.imread(image_name)
+    angle = float(batch_sample[3]) + image_offset
+    return image, angle
+
+#returns a batch of batch_size*6
+def generator( samples, batch_size = 128, LRoffset = 0.5):
+    num_samples = len(samples)
+    while 1: # Loop forever so the generator never terminates
+        shuffle(samples)
+        for offset in range(0, num_samples, batch_size):
+            batch_samples = samples[offset:offset+batch_size]
+            #print(batch_samples)
+
+            images = []
+            angles = []
+            for batch_sample in batch_samples:
+                image, angle = parseSample( batch_sample, 0, 0 )                
+                images.append(image)
+                angles.append(angle)
+
+                images.append(cv2.flip(image,1))
+                angles.append(-1*angle)
+                
+                if( LRoffset > 0 ):
+                    image, angle = parseSample( batch_sample, 1, LRoffset )
+                    images.append(image)
+                    angles.append(angle)
+
+                    images.append(cv2.flip(image,1))
+                    angles.append(-1*angle)
+                    
+                    image, angle = parseSample( batch_sample, 2, -1*LRoffset )
+                    images.append(image)
+                    angles.append(angle)
+
+                    images.append(cv2.flip(image,1))
+                    angles.append(-1*angle)
+                    
+            X = np.array(images)
+            y = np.array(angles)
+
+            yield sklearn.utils.shuffle(X, y)
+
+# compile and train the model using the generator function
+
+def printPredStats(samples, ith = 0, number = 64):#, offset = 0):
+    all_prediction_names = column(samples, ith)#[0:N]
+    step = math.floor(len(all_prediction_names)/number)
+    prediction_names = []
+    prediction_images = []
+    predictions = []
+    for i in range(1,len(samples),step):
+        prediction_name = all_prediction_names[i].strip()
+        prediction_image =  cv2.imread(prediction_name)
+        prediction_images.append(prediction_image)
+        prediction_names.append(prediction_name)
+    predictions = model.predict(np.asarray(prediction_images))
+    for angle, image in zip( predictions.tolist(), prediction_names ):
+        a = str(angle[0])#+offset)
+        f = image.split("\\")[-1]
+        print( a + ":\t" + f)
 
 
-import csv
-with open('eggs.csv', 'rb') as csvfile:
-...     spamreader = csv.reader(csvfile, delimiter=' ', quotechar='|')
-        #ge 
-...     for row in spamreader:
-...         print ', '.join(row)
 
-nb_classes = 43
-epochs = 10
-batch_size = 128
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Remote Driving')
+    parser.add_argument(
+        'dataFolder',
+        type=str,
+        help='Path to main image folder. Will also be name of h5 file.'
 
-with open('./data/data/.p', 'rb') as f:
-    data = pickle.load(f)
+    )
+    parser.add_argument(
+        'dataFolder2',
+        type=str,
+        nargs='?',
+        default='',
+        help='Optional path to second folder of images.'
+    )
+    parser.add_argument(
+        'dataFolder3',
+        type=str,
+        nargs='?',
+        default='',
+        help='Optional path to third folder of images.'
+    )
+    args = parser.parse_args()
 
-X_train, X_val, y_train, y_val = train_test_split(data['features'], data['labels'], test_size=0.2, random_state=0)
+    dataPath = args.dataFolder + '/driving_log.csv'
+    samples = getData( dataPath )
+    if( args.dataFolder2 ):
+        dataPath = args.dataFolder2 + '/driving_log.csv'
+        samples.extend( getData( dataPath ) )
+    if( args.dataFolder3 ):
+        dataPath = args.dataFolder3 + '/driving_log.csv'
+        samples.extend( getData( dataPath ) )
+    
+    print("Images:")
+    print(len(samples))
 
-X_train = X_train[0:1024]
-X_val = X_val[0:1024]
-y_train = y_train[0:1024]
-y_val = y_val[0:1024]
+    #samples.append(getData( 'fistlap/driving_log.csv '))
+    train_samples, validation_samples = train_test_split(samples, test_size=0.2)
 
-features = tf.placeholder(tf.float32, (None, 32, 32, 3))
-labels = tf.placeholder(tf.int64, None)
-resized = tf.image.resize_images(features, (227, 227))
+    #offset = 0.5
+    train_generator = generator( train_samples,
+    	batch_size=40, LRoffset = 0)
+    validation_generator = generator( validation_samples,
+    	batch_size=40, LRoffset = 0)
 
-# Returns the second final layer of the AlexNet model,
-# this allows us to redo the last layer for the traffic signs
-# model.
-probabilities = AlexNet(resized, feature_extract=True)
-#fc7 = tf.stop_gradient(fc7)
-#shape = (fc7.get_shape().as_list()[-1], nb_classes)
-#fc8W = tf.Variable(tf.truncated_normal(shape, stddev=1e-2))
-#fc8b = tf.Variable(tf.zeros(nb_classes))
-#logits = tf.nn.xw_plus_b(fc7, fc8W, fc8b)
+    model = Sequential()
+    #Crop
+    model.add(Cropping2D(cropping=((50,50), (0,0)), input_shape=(160,320,3)))
+    #Noise
+    model.add(GaussianNoise(0.5))
+    #Normalize 
+    model.add(Lambda(lambda x: (x / 255.0) - 0.5))
+    #Convolution Layer 1
+    model.add(Convolution2D(32, 3, 3))
+    model.add(MaxPooling2D((2, 2)))
+    model.add(Activation('relu'))
+    #Convolution Layer 2
+    model.add(Convolution2D(32, 3, 3))
+    model.add(MaxPooling2D((2, 2)))
+    model.add(Activation('relu'))
+    #Flatten
+    model.add(Flatten())
+    #Fully Connected Layer 1
+    model.add(Dense(1024))
+    model.add(Activation('relu'))
+    #Fully Connected Layer 2
+    model.add(Dense(128))
+    model.add(Activation('relu'))
+    #Fully Connected Layer 3
+    model.add(Dense(1))
 
-cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels)
-loss_op = tf.reduce_mean(cross_entropy)
-opt = tf.train.AdamOptimizer()
-train_op = opt.minimize(loss_op, var_list=[fc8W, fc8b])
-init_op = tf.global_variables_initializer()
-
-preds = tf.arg_max(logits, 1)
-accuracy_op = tf.reduce_mean(tf.cast(tf.equal(preds, labels), tf.float32))
+    model.compile(loss='binary_crossentropy', optimizer='rmsprop')
+    #mds, mae
+    #print( model.input_shape )
+    #print( model.inputs )
+    #print( model.outputs )
+    #print( model.output_shape )
 
 
-def eval_on_data(X, y, sess):
-    total_acc = 0
-    total_loss = 0
-    for offset in range(0, X.shape[0], batch_size):
-        end = offset + batch_size
-        X_batch = X[offset:end]
-        y_batch = y[offset:end]
+    #history_object = model.fit(myX, myy,
+    	#samples_per_epoch=len(train_samples),
+    	#validation_data=validation_generator,
+    	#nb_val_samples=len(validation_samples),
+    	#nb_epoch=3,
+        #verbose=2)
 
-        loss, acc = sess.run([loss_op, accuracy_op], feed_dict={features: X_batch, labels: y_batch})
-        total_loss += (loss * X_batch.shape[0])
-        total_acc += (acc * X_batch.shape[0])
+    #model.compile(loss='mse', optimizer='sgd')
+    history_object = model.fit_generator(train_generator,
+    	samples_per_epoch=720,
+    	validation_data=validation_generator,
+    	nb_val_samples=240,
+    	nb_epoch=3,
+    	verbose=1)
 
-    return total_loss/X.shape[0], total_acc/X.shape[0]
+    print(args.dataFolder)
+    printPredStats(samples, ith = 0, number = 5)#, offset = 0)
+    printPredStats(samples, ith = 1, number = 5)#, offset = offset)
+    printPredStats(samples, ith = 2, number = 5)#, offset = 0-offset)
 
-with tf.Session() as sess:
-    sess.run(init_op)
 
-    for i in range(epochs):
-        # training
-        X_train, y_train = shuffle(X_train, y_train)
-        t0 = time.time()
-        for offset in range(0, X_train.shape[0], batch_size):
-            end = offset + batch_size
-            sess.run(train_op, feed_dict={features: X_train[offset:end], labels: y_train[offset:end]})
 
-        val_loss, val_acc = eval_on_data(X_val, y_val, sess)
-        print("Epoch", i+1)
-        print("Time: %.3f seconds" % (time.time() - t0))
-        print("Validation Loss =", val_loss)
-        print("Validation Accuracy =", val_acc)
-        print("")
+    #modelPath = args.dataFolder +'.h5' #'model.h5' 
+    #model.save(modelPath, overwrite='t')
+
+    #print(history_object.history.keys())
+
+    ### plot the training and validation loss for each epoch
+    plt.plot(history_object.history['loss'])
+    plt.plot(history_object.history['val_loss'])
+    plt.title('model mean squared error loss')
+    plt.ylabel('mean squared error loss')
+    plt.xlabel('epoch')
+    plt.legend(['training set', 'validation set'], loc='upper right')
+    plt.show()
+
+    #score = model.evaluate_generator(validation_generator)
+
+
+
