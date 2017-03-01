@@ -142,7 +142,7 @@ if __name__ == '__main__':
 
     #offset = 0.5
     train_generator = generator( train_samples,
-    	batch_size=40, LRoffset = 0)
+    	batch_size=40, LRoffset = 0.5)
     validation_generator = generator( validation_samples,
     	batch_size=40, LRoffset = 0)
 
@@ -155,6 +155,7 @@ if __name__ == '__main__':
     model.add(Lambda(lambda x: (x / 255.0) - 0.5))
     #Convolution Layer 1
     model.add(Convolution2D(32, 3, 3))
+    model.add(Activation('softmax'))
     model.add(MaxPooling2D((2, 2)))
     model.add(Activation('relu'))
     #Convolution Layer 2
@@ -172,7 +173,7 @@ if __name__ == '__main__':
     #Fully Connected Layer 3
     model.add(Dense(1))
 
-    model.compile(loss='binary_crossentropy', optimizer='rmsprop')
+    model.compile(loss='binary_crossentropy', optimizer='adam')
     #mds, mae
     #print( model.input_shape )
     #print( model.inputs )
@@ -192,7 +193,7 @@ if __name__ == '__main__':
     	samples_per_epoch=720,
     	validation_data=validation_generator,
     	nb_val_samples=240,
-    	nb_epoch=3,
+    	nb_epoch=4,
     	verbose=1)
 
     print(args.dataFolder)
@@ -202,8 +203,8 @@ if __name__ == '__main__':
 
 
 
-    #modelPath = args.dataFolder +'.h5' #'model.h5' 
-    #model.save(modelPath, overwrite='t')
+    modelPath = args.dataFolder +'.h5' #'model.h5' 
+    model.save(modelPath, overwrite='t')
 
     #print(history_object.history.keys())
 

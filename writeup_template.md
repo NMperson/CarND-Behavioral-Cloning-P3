@@ -28,6 +28,7 @@ My project includes the following files:
 * drive.py for driving the car in autonomous mode
 * [model.h5](https://cadence.box.com/s/kx14zqrbiyl4hfajoc52sbrh0it7qws6) containing a trained convolution neural network 
 * writeup_report.md or writeup_report.pdf summarizing the results
+* data shows a small sample (100 images) of the training data
 
 ####2. Submission includes functional code
 Using the Udacity provided simulator and my drive.py file, the car can be driven autonomously around the track by executing 
@@ -57,7 +58,7 @@ In addition, the model was trained and validated on different data sets to ensur
 
 ####3. Model parameter tuning
 
-The model used with an RMSprop optimizer and a binary crossentorpy loss function.
+The model used with an Adam optimizer and a binary crossentorpy loss function.
 
 ####4. Appropriate training data
 
@@ -80,6 +81,18 @@ At the end of the process, the vehicle is able to drive autonomously around the 
 
 My model is based heavily off of Alexnet. The model essentially consists of two convolution layers, followed by a flatten layer, then three fully connected layers of 1000, 100, and finally 1.
 
+Reveiew Response 1: My layer is relatively simple and quite derivate of Alexnet. Specifically, there are three 'sections' to my model: a preprocessing section, a convolutional section, and a fully connected section.
+
+The first section I would consider the preprocessing section. First, there is a cropping layer. The top and bottom 50 pixels of the image are removed, resulting in a N x 60 x 320 x 3 matrix. That is followed by a gaussian noise layer, with sigma = 0.5. Finally, the matrix is normalized. Now, all the values in the matrix are between -0.5 and 0.5.
+
+The section section is the convolutional section. There are two iterations of this section. First, the convolution layer uses 32 filters, with a 3x3 kernal and border, by default, is 'same'. Therefore, this layer ends up with a size of N x 58 x 318 x 32. The 2x2 pooling layer that follows, cuts the number of rows and number of cols in half; therefore, N x 29 x 159 x 32. This is followed by a RELU activation layer to reduce nonlinearity.
+
+The convolutional section is then repeated with the exact same three layers. The convolution layer reduces the number of rows and columns by 2, then the pooling layer cuts the number of rows and column in half, and the activation layer has no change. This hidden layer has a size of N x (29-2)/2 x (159-2)/2 x 32, or N x 13 x 78 x 32;  non-integers are truncated.
+
+Between the second and final section is a flattening layer. 13*78*32=32448. Ergo, this hidden layer has a size of N x 32448.
+
+The final section consists of three fully connected layers. First is a dense layer of size 1024, then a dense layer of size 128, followed by a dense layer of size 1, the output of which is N x 1, or, the predicted steering angles for N frames. N.B. - in between each dense layer is a RELU activation layer. Again, this is to introduce nonlinearity. 
+
 ####3. Creation of the Training Set & Training Process
 
 To capture good driving behavior, I first recorded a lap on the track using center lane driving with occasional wiggles to provide some recovery data.
@@ -95,3 +108,6 @@ I used roughly 2000 images to train the model.
 The data were randomly shuffle. 20% of the data were kept as a validation set. 
 
 I used this training data for training the model. The validation set helped determine if the model was over or under fitting. After 4 epochs, the accuracy on both the training and validation sets were quite low. I used an adam optimizer so that manually training the learning rate wasn't necessary.
+
+Review Response 2: In response to my review and after researching into Keras optimizers, it does appear that adam is the generally preferred optimizer compared to RMSprop. In all tests, it does allow for faster training. That being said - after changing the code and retraining my model, there was no discernable differnce in performance.
+
